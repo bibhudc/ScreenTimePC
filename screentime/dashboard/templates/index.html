@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title_suffix %} - Dashboard{% endblock %}
+
+{% block content %}
+<div class="dashboard-header">
+    <h1>Screen Time Dashboard</h1>
+    <div class="date-picker">
+        <label for="date-select">Date:</label>
+        <input type="date" id="date-select" value="{{ selected_date }}">
+        <button onclick="loadToday()" class="btn btn-sm">Today</button>
+    </div>
+</div>
+
+<div class="stats-row">
+    <div class="stat-card">
+        <div class="stat-label">Total Active</div>
+        <div class="stat-value" id="total-active">--</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Total Idle</div>
+        <div class="stat-value" id="total-idle">--</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Top Category</div>
+        <div class="stat-value" id="top-category">--</div>
+    </div>
+</div>
+
+<div class="charts-grid">
+    <div class="chart-card">
+        <h2>Time by Category</h2>
+        <div class="chart-container chart-container-pie">
+            <canvas id="category-pie"></canvas>
+        </div>
+    </div>
+
+    <div class="chart-card">
+        <h2>Top Applications</h2>
+        <div class="chart-container">
+            <canvas id="top-apps-bar"></canvas>
+        </div>
+    </div>
+
+    <div class="chart-card chart-card-wide">
+        <h2>Activity Timeline</h2>
+        <div class="chart-container chart-container-timeline">
+            <canvas id="timeline-chart"></canvas>
+        </div>
+    </div>
+
+    <div class="chart-card chart-card-wide">
+        <h2>Top Websites</h2>
+        <div class="chart-container">
+            <canvas id="top-websites-bar"></canvas>
+        </div>
+    </div>
+
+    <div class="chart-card chart-card-wide">
+        <div class="trend-header">
+            <h2>Daily Trends</h2>
+            <select id="trend-days" onchange="loadTrends()">
+                <option value="7">7 days</option>
+                <option value="14">14 days</option>
+                <option value="30" selected>30 days</option>
+            </select>
+        </div>
+        <div class="chart-container">
+            <canvas id="trend-line"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="sessions-section">
+    <div class="sessions-header">
+        <h2>Session Log</h2>
+        <div class="sessions-filters">
+            <label for="session-start">From:</label>
+            <input type="date" id="session-start" value="{{ selected_date }}">
+            <label for="session-end">To:</label>
+            <input type="date" id="session-end" value="{{ selected_date }}">
+            <button onclick="loadSessions(1)" class="btn btn-sm">Filter</button>
+        </div>
+    </div>
+    <div class="sessions-info" id="sessions-info"></div>
+    <table class="sessions-table" id="sessions-table">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Duration</th>
+                <th>Application</th>
+                <th>Window / Page</th>
+                <th>Category</th>
+            </tr>
+        </thead>
+        <tbody id="sessions-body">
+        </tbody>
+    </table>
+    <div class="pagination" id="sessions-pagination"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const dateInput = document.getElementById('date-select');
+
+    dateInput.addEventListener('change', () => {
+        loadAllData(dateInput.value);
+    });
+
+    function loadToday() {
+        const today = new Date().toISOString().split('T')[0];
+        dateInput.value = today;
+        loadAllData(today);
+    }
+
+    // Initial load
+    loadAllData(dateInput.value);
+    loadTrends();
+</script>
+{% endblock %}

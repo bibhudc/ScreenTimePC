@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title_suffix %} - {{ category }}{% endblock %}
+
+{% block content %}
+<div class="dashboard-header">
+    <h1>{{ category }} - Detail View</h1>
+    <div class="date-picker">
+        <a href="/?date={{ selected_date }}" class="btn">&larr; Back to Dashboard</a>
+        <label for="date-select">Date:</label>
+        <input type="date" id="date-select" value="{{ selected_date }}">
+    </div>
+</div>
+
+<table class="sessions-table">
+    <thead>
+        <tr>
+            <th>Time</th>
+            <th>Duration</th>
+            <th>Application</th>
+            <th>Window / Page</th>
+        </tr>
+    </thead>
+    <tbody id="detail-body">
+    </tbody>
+</table>
+
+<div class="detail-total">
+    Total time: <strong id="detail-total-time">--</strong>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const dateInput = document.getElementById('date-select');
+    const category = "{{ category }}";
+
+    async function loadDetails(d) {
+        const res = await fetch(`/api/sessions?date=${d}`);
+        const data = await res.json();
+        const filtered = data.sessions.filter(s => s.category === category);
+        const tbody = document.getElementById('detail-body');
+        let totalSecs = 0;
+
+        tbody.innerHTML = filtered.map(s => {
+            totalSecs += s.duration_seconds;
+            const start = s.start_time.split('T')[1] || s.start_time.substring(11);
+            const end = s.end_time.split('T')[1] || s.end_time.substring(11);
+            return `<tr>
+                <td>${start} - ${end}</td>
+                <td>${formatDuration(s.duration_seconds)}</td>
+                <td>${escapeHtml(s.app_name)}</td>
+                <td class="title-cell">${escapeHtml(s.window_title || '')}</td>
+            </tr>`;
+        }).join('');
+
+        document.getElementById('detail-total-time').textContent = formatDuration(totalSecs);
+    }
+
+    function formatDuration(secs) {
+        const h = Math.floor(secs / 3600);
+        const m = Math.floor((secs % 3600) / 60);
+        if (h > 0) return `${h}h ${m}m`;
+        return `${m}m`;
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    dateInput.addEventListener('change', () => loadDetails(dateInput.value));
+    loadDetails(dateInput.value);
+</script>
+{% endblock %}

@@ -1,0 +1,7 @@
+{
+  "poll_interval_seconds": 5,
+  "idle_threshold_seconds": 120,
+  "db_path": "",
+  "dashboard_port": 5123,
+  "dashboard_host": "0.0.0.0"
+}
