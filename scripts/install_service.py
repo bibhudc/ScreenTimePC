@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
-Install ScreenTimePC as a Windows service with a watchdog scheduled task.
+Install ScreenTimePC as a logon task with a watchdog scheduled task.
 Must be run as Administrator.
+
+Why not a Windows service? Services run in Session 0, which is isolated
+from the interactive desktop on Windows 10/11. GetForegroundWindow()
+returns nothing there. Instead, we use a scheduled task that runs at
+user logon — same session, full desktop access, survives reboots.
 """
 
 import sys
@@ -18,7 +23,7 @@ if sys.platform != "win32":
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 APP_DIR = Path(os.environ.get("LOCALAPPDATA", "")) / "ScreenTimePC"
 CONFIG_DIR = APP_DIR / "config"
-SERVICE_SCRIPT = PROJECT_ROOT / "screentime" / "service" / "win_service.py"
+TRACKER_SCRIPT = PROJECT_ROOT / "scripts" / "run_tracker.py"
 WATCHDOG_SCRIPT = PROJECT_ROOT / "screentime" / "service" / "watchdog.py"
 
 
@@ -45,43 +50,80 @@ def setup_config():
             print(f"  {config_file.name} already exists, skipping")
 
 
-def install_service():
-    """Install the Windows service."""
-    python_exe = sys.executable
-    print(f"  Using Python: {python_exe}")
-
+def remove_old_service():
+    """Remove the old Windows service if it exists (from previous installs)."""
     result = subprocess.run(
-        [python_exe, str(SERVICE_SCRIPT), "install"],
+        ["sc", "query", "ScreenTimePC"],
         capture_output=True, text=True,
     )
-    print(result.stdout)
-    if result.returncode != 0:
-        print(f"  Error: {result.stderr}")
-        return False
+    if result.returncode == 0:
+        print("  Found old Windows service, removing...")
+        subprocess.run(["sc", "stop", "ScreenTimePC"], capture_output=True)
+        subprocess.run(["sc", "delete", "ScreenTimePC"], capture_output=True)
+        print("  Old service removed")
 
-    # Set to auto-start
+
+def install_logon_task():
+    """Create a scheduled task that runs at user logon.
+
+    Uses pythonw.exe (no console window) to run the tracker hidden.
+    The task runs in the user's interactive session, so it can see
+    the desktop and track foreground windows.
+    """
+    # Use pythonw.exe for hidden execution (no console window)
+    python_dir = Path(sys.executable).parent
+    pythonw = python_dir / "pythonw.exe"
+    if not pythonw.exists():
+        pythonw = Path(sys.executable)  # fallback to python.exe
+        print(f"  Note: pythonw.exe not found, using python.exe (console window will be visible)")
+
+    username = os.environ.get("USERNAME", "")
+    userdomain = os.environ.get("USERDOMAIN", ".")
+    full_user = f"{userdomain}\\{username}"
+
+    # Remove existing task if present
     subprocess.run(
-        ["sc", "config", "ScreenTimePC", "start=", "auto"],
+        ["schtasks", "/delete", "/tn", "ScreenTimePC", "/f"],
         capture_output=True,
     )
-    print("  Service set to auto-start")
-    return True
+
+    result = subprocess.run([
+        "schtasks", "/create",
+        "/tn", "ScreenTimePC",
+        "/tr", f'"{pythonw}" "{TRACKER_SCRIPT}"',
+        "/sc", "onlogon",
+        "/ru", full_user,
+        "/rl", "highest",
+        "/f",
+    ], capture_output=True, text=True)
+
+    if result.returncode == 0:
+        print(f"  Logon task created for user: {full_user}")
+        print(f"  Using: {pythonw}")
+        return True
+    else:
+        print(f"  Error creating logon task: {result.stderr}")
+        return False
 
 
-def start_service():
-    """Start the service."""
-    result = subprocess.run(
-        [sys.executable, str(SERVICE_SCRIPT), "start"],
-        capture_output=True, text=True,
+def start_tracker_now():
+    """Start the tracker immediately (don't wait for next logon)."""
+    python_dir = Path(sys.executable).parent
+    pythonw = python_dir / "pythonw.exe"
+    if not pythonw.exists():
+        pythonw = Path(sys.executable)
+
+    subprocess.Popen(
+        [str(pythonw), str(TRACKER_SCRIPT)],
+        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW,
     )
-    print(result.stdout)
-    if result.returncode != 0:
-        print(f"  Warning: {result.stderr}")
+    print("  Tracker started in background")
 
 
 def install_watchdog():
-    """Create a scheduled task for the watchdog."""
+    """Create a scheduled task that checks the tracker every 5 minutes."""
     python_exe = sys.executable
+    # The watchdog checks if the tracker is running and restarts it if not
     task_cmd = f'"{python_exe}" "{WATCHDOG_SCRIPT}"'
 
     result = subprocess.run([
@@ -120,21 +162,25 @@ def main():
 
     check_admin()
 
-    print("[1/4] Setting up configuration...")
+    print("[1/5] Setting up configuration...")
     setup_config()
     print()
 
-    print("[2/4] Installing Windows service...")
-    if not install_service():
-        print("  Failed to install service. Aborting.")
+    print("[2/5] Removing old service (if any)...")
+    remove_old_service()
+    print()
+
+    print("[3/5] Creating logon task...")
+    if not install_logon_task():
+        print("  Failed to create logon task. Aborting.")
         sys.exit(1)
     print()
 
-    print("[3/4] Starting service...")
-    start_service()
+    print("[4/5] Starting tracker now...")
+    start_tracker_now()
     print()
 
-    print("[4/4] Installing watchdog scheduled task...")
+    print("[5/5] Installing watchdog scheduled task...")
     install_watchdog()
     print()
 
@@ -143,9 +189,12 @@ def main():
     print("  Installation complete!")
     print()
     print(f"  Dashboard: http://{ip}:5123")
+    print(f"  Also at:   http://localhost:5123")
     print(f"  Config:    {CONFIG_DIR}")
     print(f"  Database:  {APP_DIR / 'screentime.db'}")
+    print(f"  Logs:      {APP_DIR / 'screentime.log'}")
     print()
+    print("  The tracker is running now and will auto-start on logon.")
     print("  To customize categories, edit:")
     print(f"    {CONFIG_DIR / 'categories.json'}")
     print("=" * 50)

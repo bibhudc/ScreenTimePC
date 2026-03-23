@@ -39,8 +39,11 @@ python scripts\install_service.py
 The installer will:
 
 - Copy config to `%LOCALAPPDATA%\ScreenTimePC\config\`
-- Install + start the Windows service (auto-starts on boot)
+- Create a logon task that starts tracking when the user logs in (runs hidden, no console window)
+- Start the tracker immediately (no reboot needed)
 - Create a watchdog scheduled task (checks every 5 min, because trust issues)
+
+> **Why not a Windows service?** Services run in Session 0, which is walled off from the user's desktop on Windows 10/11. The tracker needs to see the foreground window, so it runs as a logon task in the user's session instead.
 
 Open `http://localhost:5123` — dashboard should appear within a minute. The truth takes a little longer.
 

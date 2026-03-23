@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Uninstall ScreenTimePC service and watchdog scheduled task.
+Uninstall ScreenTimePC: stop tracker, remove scheduled tasks, clean up.
 Must be run as Administrator.
 """
 
@@ -25,6 +25,21 @@ def check_admin():
         sys.exit(1)
 
 
+def kill_tracker():
+    """Kill any running tracker processes."""
+    result = subprocess.run(
+        ["taskkill", "/f", "/im", "pythonw.exe", "/fi", f"MODULES eq run_tracker*"],
+        capture_output=True, text=True,
+    )
+    # Also try a broader approach: kill anything listening on port 5123
+    subprocess.run(
+        ["powershell", "-Command",
+         "Get-NetTCPConnection -LocalPort 5123 -ErrorAction SilentlyContinue | "
+         "ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"],
+        capture_output=True,
+    )
+
+
 def main():
     print("=" * 50)
     print("  ScreenTimePC Uninstaller")
@@ -33,23 +48,23 @@ def main():
 
     check_admin()
 
-    print("[1/3] Stopping service...")
-    subprocess.run(
-        [sys.executable, str(SERVICE_SCRIPT), "stop"],
-        capture_output=True, text=True,
-    )
+    print("[1/4] Stopping tracker process...")
+    kill_tracker()
     print("  Done")
     print()
 
-    print("[2/3] Removing service...")
+    print("[2/4] Removing logon task...")
     result = subprocess.run(
-        [sys.executable, str(SERVICE_SCRIPT), "remove"],
+        ["schtasks", "/delete", "/tn", "ScreenTimePC", "/f"],
         capture_output=True, text=True,
     )
-    print(result.stdout)
+    if result.returncode == 0:
+        print("  Logon task removed")
+    else:
+        print(f"  Note: {result.stderr.strip()}")
     print()
 
-    print("[3/3] Removing watchdog scheduled task...")
+    print("[3/4] Removing watchdog scheduled task...")
     result = subprocess.run(
         ["schtasks", "/delete", "/tn", "ScreenTimePC_Watchdog", "/f"],
         capture_output=True, text=True,
@@ -58,6 +73,18 @@ def main():
         print("  Watchdog task removed")
     else:
         print(f"  Note: {result.stderr.strip()}")
+    print()
+
+    print("[4/4] Removing old Windows service (if any)...")
+    subprocess.run(["sc", "stop", "ScreenTimePC"], capture_output=True)
+    result = subprocess.run(
+        ["sc", "delete", "ScreenTimePC"],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        print("  Old service removed")
+    else:
+        print("  No old service found (OK)")
     print()
 
     print("=" * 50)
