@@ -29,8 +29,12 @@ No cloud. No accounts. No "please sign in with Google." Everything stays on the 
 :: Copy the project folder to the target PC, then:
 cd C:\ScreenTimePC
 pip install -r requirements.txt
+
+:: ⚠️ Right-click Command Prompt → "Run as Administrator" for this step:
 python scripts\install_service.py
 ```
+
+> **Note:** The service installer *must* run as Administrator — it registers a Windows service and a scheduled task. Regular `pip install` works fine without admin.
 
 The installer will:
 
