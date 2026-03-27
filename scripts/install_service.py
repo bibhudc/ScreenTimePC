@@ -142,6 +142,32 @@ def install_watchdog():
         print(f"  Warning: Could not create watchdog task: {result.stderr}")
 
 
+def add_firewall_rule():
+    """Add a Windows Firewall rule to allow remote dashboard access on port 5123.
+
+    Without this, the dashboard is only reachable from localhost.
+    The Windows firewall prompt is unreliable, so we add it explicitly.
+    """
+    # Remove old rule if present (idempotent)
+    subprocess.run(
+        ["netsh", "advfirewall", "firewall", "delete", "rule",
+         "name=ScreenTimePC Dashboard"],
+        capture_output=True,
+    )
+
+    result = subprocess.run(
+        ["netsh", "advfirewall", "firewall", "add", "rule",
+         "name=ScreenTimePC Dashboard",
+         "dir=in", "action=allow", "protocol=tcp", "localport=5123"],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        print("  Firewall rule added (TCP port 5123 open for remote access)")
+    else:
+        print(f"  Warning: Could not add firewall rule: {result.stderr}")
+        print("  You may need to manually allow port 5123 in Windows Firewall")
+
+
 def get_local_ip():
     """Get the machine's LAN IP address."""
     try:
@@ -162,26 +188,30 @@ def main():
 
     check_admin()
 
-    print("[1/5] Setting up configuration...")
+    print("[1/6] Setting up configuration...")
     setup_config()
     print()
 
-    print("[2/5] Removing old service (if any)...")
+    print("[2/6] Removing old service (if any)...")
     remove_old_service()
     print()
 
-    print("[3/5] Creating logon task...")
+    print("[3/6] Creating logon task...")
     if not install_logon_task():
         print("  Failed to create logon task. Aborting.")
         sys.exit(1)
     print()
 
-    print("[4/5] Starting tracker now...")
+    print("[4/6] Starting tracker now...")
     start_tracker_now()
     print()
 
-    print("[5/5] Installing watchdog scheduled task...")
+    print("[5/6] Installing watchdog scheduled task...")
     install_watchdog()
+    print()
+
+    print("[6/6] Adding firewall rule for remote access...")
+    add_firewall_rule()
     print()
 
     ip = get_local_ip()

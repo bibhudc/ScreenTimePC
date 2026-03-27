@@ -6,46 +6,66 @@ Built because "I was just doing homework" needed a fact-check. Spoiler: it was M
 
 ## What This Does
 
-- **Tracks active windows** every 5 seconds 
+- **Tracks active windows** every 5 seconds
 - **Detects idle time** — no keyboard/mouse for 2+ minutes = probably getting a snack
 - **Categorises automatically** — gaming, homework, social media, streaming, and the ever-mysterious "Other"
-- **Runs as a Windows service** — starts on boot, invisible, survives reboots, and most teenagers
-- **Web dashboard** at `http://localhost:5123` 
-- **Watchdog** — a scheduled task that restarts the service if someone *accidentally* kills it
+- **Runs as a hidden logon task** — starts when the user logs in, invisible, survives reboots, and most teenagers
+- **Web dashboard** at `http://localhost:5123` — viewable remotely from any device on the same network
+- **Watchdog** — a scheduled task that restarts the tracker if someone *accidentally* kills it
 
 No cloud. No accounts. No "please sign in with Google." Everything stays on the local machine.
+
+> **Note:** This is a Windows-only tool. The tracker uses Windows APIs (`win32gui`) to read foreground windows. macOS/Linux are not supported for tracking, but the dev/simulation mode works on macOS for testing.
 
 ## Quick Start
 
 ### Prerequisites
 
-- Windows 10 or 11
-- [Python 3.10+](https://python.org) (check **"Add Python to PATH"** during install — future you will thank present you)
-- Administrator access to the target PC
+- **Windows 10 or 11**
+- **[Python 3.10+](https://python.org)**
+  - During install, **check "Add Python to PATH"** — this is critical. Future you will thank present you.
+  - To verify after install, open a **new** Command Prompt and run: `python --version`
+- **Administrator access** to the target PC
 
 ### Install
 
 ```cmd
-:: Copy the project folder to the target PC, then:
+:: 1. Copy the project folder to the target PC, then:
 cd C:\ScreenTimePC
-pip install -r requirements.txt
 
-:: ⚠️ Right-click Command Prompt → "Run as Administrator" for this step:
+:: 2. Install dependencies (does NOT require admin)
+python -m pip install -r requirements.txt
+
+:: 3. Right-click Command Prompt → "Run as Administrator", then:
 python scripts\install_service.py
 ```
 
-> **Note:** The service installer *must* run as Administrator — it registers a Windows service and a scheduled task. Regular `pip install` works fine without admin.
+> **Tip:** If `pip` doesn't work, use `python -m pip` instead — it's more reliable on fresh Python installs.
 
 The installer will:
 
-- Copy config to `%LOCALAPPDATA%\ScreenTimePC\config\`
-- Create a logon task that starts tracking when the user logs in (runs hidden, no console window)
-- Start the tracker immediately (no reboot needed)
-- Create a watchdog scheduled task (checks every 5 min, because trust issues)
+1. Copy config to `%LOCALAPPDATA%\ScreenTimePC\config\`
+2. Remove any old Windows service from a previous install
+3. Create a **logon task** that starts tracking when the user logs in (runs hidden via `pythonw.exe` — no console window)
+4. Start the tracker **immediately** (no reboot needed)
+5. Create a watchdog scheduled task (checks every 5 min, because trust issues)
+6. Add a **Windows Firewall rule** to allow remote dashboard access on port 5123
 
-> **Why not a Windows service?** Services run in Session 0, which is walled off from the user's desktop on Windows 10/11. The tracker needs to see the foreground window, so it runs as a logon task in the user's session instead.
+> **Why not a Windows service?** Services run in Session 0, which is completely walled off from the user's desktop on Windows 10/11. `GetForegroundWindow()` returns nothing there — the tracker would silently collect zero data. The logon task runs in the user's interactive session instead, with full desktop access.
 
-Open `http://localhost:5123` — dashboard should appear within a minute. The truth takes a little longer.
+### Verify It's Working
+
+On the target PC, open a browser and go to:
+
+```
+http://localhost:5123
+```
+
+You should see the dashboard with data appearing within a minute. If it shows all zeros, check the log:
+
+```cmd
+type %LOCALAPPDATA%\ScreenTimePC\screentime.log
+```
 
 ### View Remotely
 
@@ -55,11 +75,21 @@ The dashboard binds to `0.0.0.0:5123`, so you can check it from the comfort of y
 http://<kids-pc-ip>:5123
 ```
 
-Run `ipconfig` on the target PC to find its IP. Or just ask your teenager — they probably know more about networking than you do.
+**To find the IP:** run `ipconfig` on the target PC and look for the IPv4 address. Or just ask your teenager — they probably know more about networking than you do.
+
+**Remote access not working?** The installer adds a firewall rule automatically, but if it still doesn't work:
+
+```cmd
+:: Run as Administrator on the target PC:
+netsh advfirewall firewall add rule name="ScreenTimePC Dashboard" dir=in action=allow protocol=tcp localport=5123
+```
+
+Also make sure both devices are on the **same Wi-Fi / LAN network**.
 
 ### Uninstall
 
 ```cmd
+:: Run as Administrator:
 cd C:\ScreenTimePC
 python scripts\uninstall_service.py
 ```
@@ -99,7 +129,7 @@ Chrome, Edge, Firefox, Brave, Opera — all categorised by window title. Yes, ev
 Test locally with simulated data (works on macOS too — no teenagers required):
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 SCREENTIME_DEV_SIMULATE=1 python scripts/run_dev.py
 ```
 
@@ -116,19 +146,30 @@ ScreenTimePC/
 │   ├── categoriser/           # The judge
 │   ├── db/                    # The memory
 │   ├── dashboard/             # The snitch
-│   └── service/               # The survivor
+│   └── service/               # The survivor (watchdog)
 ├── scripts/
-│   ├── install_service.py     # Install on target PC
-│   ├── uninstall_service.py   # Remove from target PC
-│   └── run_dev.py             # Dev/test runner
+│   ├── install_service.py     # Install on target PC (as Admin)
+│   ├── uninstall_service.py   # Remove from target PC (as Admin)
+│   ├── run_tracker.py         # Production runner (launched by logon task)
+│   └── run_dev.py             # Dev/test runner (with simulation mode)
 ├── tests/
 └── requirements.txt
 ```
 
+## Troubleshooting
+
+| Problem | Solution |
+| ------- | -------- |
+| `python` not recognized | Reinstall Python, check **"Add Python to PATH"** |
+| `pip` not recognized | Use `python -m pip` instead |
+| Dashboard shows 0 minutes | Check `%LOCALAPPDATA%\ScreenTimePC\screentime.log` for errors |
+| Can't reach dashboard remotely | Run the `netsh` firewall command above. Check both devices are on the same network. |
+| Installer says "not Administrator" | Right-click Command Prompt → **Run as Administrator** |
+
 ## Requirements
 
 - Python 3.10+
-- `pywin32` (Windows service support — auto-skipped on macOS/Linux)
+- `pywin32` (Windows API access — auto-skipped on macOS/Linux)
 - `psutil` (process info)
 - `flask` (dashboard)
 - Patience (parenting)
